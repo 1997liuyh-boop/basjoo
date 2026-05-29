@@ -180,7 +180,7 @@ def run_sqlite_migrations(database_url: str) -> None:
             )
             if cursor.rowcount > 0:
                 print(
-                    f"✓ Backfilled workspace_quotas.max_agents for "
+                    f"[OK] Backfilled workspace_quotas.max_agents for "
                     f"{cursor.rowcount} row(s)"
                 )
             cursor.execute(
@@ -188,7 +188,7 @@ def run_sqlite_migrations(database_url: str) -> None:
             )
             if cursor.rowcount > 0:
                 print(
-                    f"✓ Backfilled workspace_quotas.max_urls for "
+                    f"[OK] Backfilled workspace_quotas.max_urls for "
                     f"{cursor.rowcount} row(s)"
                 )
 
@@ -200,7 +200,7 @@ def run_sqlite_migrations(database_url: str) -> None:
             )
             if cursor.rowcount > 0:
                 print(
-                    f"✓ Migrated {cursor.rowcount} admin_user(s) from readonly to support"
+                    f"[OK] Migrated {cursor.rowcount} admin_user(s) from readonly to support"
                 )
 
         conn.commit()
@@ -239,6 +239,7 @@ def _migrate_agents(cursor: sqlite3.Cursor):
         ("deleted_at", "DATETIME"),
         ("purge_after", "DATETIME"),
         ("provider_type", "VARCHAR(50)"),
+        ("api_format", "VARCHAR(30)"),
         ("azure_endpoint", "VARCHAR(500)"),
         ("azure_deployment_name", "VARCHAR(100)"),
         ("azure_api_version", "VARCHAR(20)"),
@@ -283,7 +284,7 @@ def _migrate_agents(cursor: sqlite3.Cursor):
         cursor.execute(
             "ALTER TABLE agents RENAME COLUMN rate_limit_per_hour TO rate_limit_per_minute"
         )
-        print("✓ Renamed rate_limit_per_hour → rate_limit_per_minute")
+        print("[OK] Renamed rate_limit_per_hour → rate_limit_per_minute")
         existing.discard("rate_limit_per_hour")
         existing.add("rate_limit_per_minute")
 
@@ -294,7 +295,7 @@ def _migrate_agents(cursor: sqlite3.Cursor):
     # Add any still-missing columns
     added = _ensure_columns(cursor, "agents", columns)
     if added:
-        print(f"✓ Added {added} column(s) to agents")
+        print(f"[OK] Added {added} column(s) to agents")
 
 
 def _backfill_agents(cursor: sqlite3.Cursor):
@@ -309,7 +310,7 @@ def _backfill_agents(cursor: sqlite3.Cursor):
         cursor.execute(
             "UPDATE agents SET provider_type = NULL "
             "WHERE provider_type IS NOT NULL "
-            "AND provider_type NOT IN ('openai','openai_native','google','anthropic','xai','openrouter','zai','deepseek','volcengine','moonshot','aliyun_bailian','siliconflow')"
+            "AND provider_type NOT IN ('openai','openai_native','google','anthropic','anthropic_native','xai','openrouter','zai','deepseek','volcengine','moonshot','aliyun_bailian','siliconflow')"
         )
         # Then infer from api_base/model for NULL/empty rows
         cursor.execute(

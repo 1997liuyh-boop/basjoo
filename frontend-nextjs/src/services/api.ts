@@ -45,7 +45,7 @@ export interface Source {
   id?: string;
 }
 
-export type ProviderType = 'openai' | 'openai_native' | 'google' | 'anthropic' | 'xai' | 'openrouter' | 'zai' | 'deepseek' | 'volcengine' | 'moonshot' | 'aliyun_bailian' | 'siliconflow';
+export type ProviderType = 'openai' | 'openai_native' | 'google' | 'anthropic' | 'anthropic_native' | 'xai' | 'openrouter' | 'zai' | 'deepseek' | 'volcengine' | 'moonshot' | 'aliyun_bailian' | 'siliconflow';
 
 export type EmbeddingProvider = 'jina' | 'siliconflow' | 'custom' | 'r2r'
 export type AgentType = 'website_support' | 'ai_clone' | 'sales_outreach' | 'custom'
@@ -141,6 +141,7 @@ export interface URLSource {
   status: 'pending' | 'fetching' | 'success' | 'failed';
   title?: string;
   last_fetch_at?: string;
+  last_error?: string;
   is_indexed: boolean;
   created_at: string;
   updated_at?: string;
@@ -232,10 +233,10 @@ class APIService {
     }
 
     const { protocol, hostname, port } = window.location;
-    const isFrontendDevPort = port === '3000';
+    const isFrontendDevPort = port === '3001';
 
     if ((protocol === 'http:' || protocol === 'https:') && isFrontendDevPort) {
-      return `${protocol}//${hostname}:8000`;
+      return `${protocol}//${hostname}:8848`;
     }
 
     return this.baseUrl;
@@ -267,15 +268,28 @@ class APIService {
     url.searchParams.set('locale', this.getLocale());
 
     const token = localStorage.getItem('token');
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 10000);
 
-    const response = await fetch(url.toString(), {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...options.headers,
-      },
-    });
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), {
+        ...options,
+        signal: options.signal || controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...options.headers,
+        },
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error('请求超时，请确认后端服务是否已启动');
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       const errorMessage = await parseErrorResponse(response);
@@ -613,7 +627,7 @@ class APIService {
     }).then(result => result as { created: number; message: string });
   }
 
-  async listURLs(agentId: string, skip = 0, limit = 500): Promise<{
+  async listURLs(agentId: string, skip = 0, limit = 100): Promise<{
     urls: URLSource[];
     total: number;
     quota: { used: number; max: number };

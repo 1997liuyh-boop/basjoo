@@ -172,12 +172,15 @@ class Settings(BaseSettings):
 
     # 应用
     app_name: str = "Basjoo"
-    app_port: int = 8000
+    app_port: int = 8848
 
     # 限流
     default_rate_limit: int = 100
     rate_limit_per_minute: int = 1000
     rate_limit_burst_size: int = 200
+
+    # URL fetch safety - 设为 true 允许抓取内网 IP 和直连 IP 地址（仅限受信环境）
+    allow_direct_ip_fetch: bool = False
 
     # Login rate limit
     login_rate_limit_max_attempts: int = 5

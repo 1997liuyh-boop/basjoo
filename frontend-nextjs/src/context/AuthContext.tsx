@@ -66,23 +66,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY)
-    const savedAdmin = localStorage.getItem(ADMIN_STORAGE_KEY)
+    try {
+      const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY)
+      const savedAdmin = localStorage.getItem(ADMIN_STORAGE_KEY)
 
-    if (savedToken && savedAdmin && !isTokenExpired(savedToken)) {
-      try {
-        setToken(savedToken)
-        setAdmin(JSON.parse(savedAdmin))
-      } catch {
+      if (savedToken && savedAdmin && !isTokenExpired(savedToken)) {
+        try {
+          setToken(savedToken)
+          setAdmin(JSON.parse(savedAdmin))
+        } catch {
+          localStorage.removeItem(TOKEN_STORAGE_KEY)
+          localStorage.removeItem(ADMIN_STORAGE_KEY)
+        }
+      } else {
         localStorage.removeItem(TOKEN_STORAGE_KEY)
         localStorage.removeItem(ADMIN_STORAGE_KEY)
       }
-    } else {
-      localStorage.removeItem(TOKEN_STORAGE_KEY)
-      localStorage.removeItem(ADMIN_STORAGE_KEY)
+    } catch {
+      // Storage unavailable or blocked — fall back to logged-out state.
+    } finally {
+      setIsLoading(false)
     }
-
-    setIsLoading(false)
   }, [])
 
   // Refresh admin role from the backend on mount so that role changes
@@ -90,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // without requiring a re-login.
   useEffect(() => {
     if (!token || isTokenExpired(token)) {
+      setIsLoading(false)
       return
     }
 
@@ -113,6 +118,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         // Network error — keep existing cached admin, don't log out.
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false)
+        }
       }
     }
 

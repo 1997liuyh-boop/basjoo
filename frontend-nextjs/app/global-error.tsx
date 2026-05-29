@@ -1,0 +1,27 @@
+'use client';
+
+export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  return (
+    <html lang="zh-CN">
+      <body>
+        <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif' }}>
+          <h1 style={{ marginBottom: 12 }}>应用加载失败</h1>
+          <p style={{ marginBottom: 16, color: '#666' }}>{error.message || '发生了未知错误。'}</p>
+          <button
+            type="button"
+            onClick={() => reset()}
+            style={{
+              padding: '8px 14px',
+              borderRadius: 8,
+              border: '1px solid #ccc',
+              background: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            重试
+          </button>
+        </div>
+      </body>
+    </html>
+  );
+}

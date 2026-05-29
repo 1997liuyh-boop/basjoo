@@ -5,6 +5,7 @@ from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 from urllib.parse import urlsplit
 
+from config import settings
 from services.url_safety import validate_url_safe
 
 
@@ -111,7 +112,7 @@ def _validate_safe_ingest_url(url: str) -> str:
     normalized = (url or "").strip()
     if len(normalized) > 2048:
         raise ValueError("URL exceeds maximum length")
-    safe, reason = validate_url_safe(normalized)
+    safe, reason = validate_url_safe(normalized, allow_ip=settings.allow_direct_ip_fetch)
     if not safe:
         raise ValueError(f"Invalid URL: {normalized}")
     return normalized
@@ -139,6 +140,7 @@ class URLItem(BaseModel):
     status: Literal["pending", "fetching", "success", "failed"]
     title: Optional[str] = None
     last_fetch_at: Optional[datetime] = None
+    last_error: Optional[str] = None
     is_indexed: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -264,8 +266,11 @@ class AgentConfig(BaseModel):
         None, description="Masked SiliconFlow embedding API key"
     )
     provider_type: Optional[
-        Literal["openai", "openai_native", "google", "anthropic", "xai", "openrouter", "zai", "deepseek", "volcengine", "moonshot", "aliyun_bailian", "siliconflow"]
+        Literal["openai", "openai_native", "google", "anthropic", "anthropic_native", "xai", "openrouter", "zai", "deepseek", "volcengine", "moonshot", "aliyun_bailian", "siliconflow"]
     ] = Field("openai", description="AI provider type")
+    api_format: Optional[
+        Literal["openai", "openai_compatible", "anthropic", "anthropic_native"]
+    ] = Field(None, description="API format for custom provider")
     azure_endpoint: Optional[str] = Field(None, description="Azure OpenAI endpoint URL")
     azure_deployment_name: Optional[str] = Field(
         None, description="Azure deployment name"
@@ -359,8 +364,11 @@ class AgentUpdateRequest(BaseModel):
     jina_api_key: Optional[str] = Field(None, min_length=0)
     siliconflow_api_key: Optional[str] = Field(None, min_length=0)
     provider_type: Optional[
-        Literal["openai", "openai_native", "google", "anthropic", "xai", "openrouter", "zai", "deepseek", "volcengine", "moonshot", "aliyun_bailian", "siliconflow"]
+        Literal["openai", "openai_native", "google", "anthropic", "anthropic_native", "xai", "openrouter", "zai", "deepseek", "volcengine", "moonshot", "aliyun_bailian", "siliconflow"]
     ] = Field(None, description="AI provider type")
+    api_format: Optional[
+        Literal["openai", "openai_compatible", "anthropic", "anthropic_native"]
+    ] = Field(None, description="API format for custom provider")
     azure_endpoint: Optional[str] = Field(None, description="Azure OpenAI endpoint URL")
     azure_deployment_name: Optional[str] = Field(
         None, description="Azure deployment name"

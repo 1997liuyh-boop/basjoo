@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-const backendProxyTarget = process.env.BACKEND_PROXY_TARGET || 'http://localhost:8000';
+const backendProxyTarget = process.env.BACKEND_PROXY_TARGET || 'http://localhost:8848';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

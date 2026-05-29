@@ -91,6 +91,7 @@ services:
       dockerfile: Dockerfile
     container_name: basjoo-scrapling
     restart: unless-stopped
+    shm_size: '2gb'
     networks:
       - basjoo-network
     healthcheck:
@@ -98,7 +99,9 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 60s
+    environment:
+      - ALLOW_DIRECT_IP_FETCH=${ALLOW_DIRECT_IP_FETCH:-false}
     profiles: ["prod", "dev"]
 
   # ============================================
@@ -130,6 +133,7 @@ services:
       - RATE_LIMIT_BURST_SIZE=${RATE_LIMIT_BURST_SIZE:-200}
       - LOG_LEVEL=INFO
       - SCRAPLING_SERVICE_URL=http://scrapling-service:8001
+      - ALLOW_DIRECT_IP_FETCH=${ALLOW_DIRECT_IP_FETCH:-false}
     volumes:
       - backend-data:/app/data
       - ./r2r-config:/app/r2r-config
@@ -225,6 +229,7 @@ services:
       - RATE_LIMIT_BURST_SIZE=${RATE_LIMIT_BURST_SIZE:-200}
       - LOG_LEVEL=DEBUG
       - SCRAPLING_SERVICE_URL=http://scrapling-service:8001
+      - ALLOW_DIRECT_IP_FETCH=${ALLOW_DIRECT_IP_FETCH:-false}
     volumes:
       - backend-data:/app/data
       - ./backend:/app

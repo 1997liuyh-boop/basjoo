@@ -234,12 +234,12 @@ export default function SystemSettings() {
   const hasAllowedWidgetOriginsError = allowedWidgetOriginsValidation.invalidOrigins.length > 0
 
   const getEmbedApiBase = () => {
-    const rawApiBase = serverApiBase || API_BASE_URL || 'http://localhost:8000'
+    const rawApiBase = serverApiBase || API_BASE_URL || 'http://localhost:8848'
 
     try {
       const url = new URL(rawApiBase, window.location.origin)
       if ((url.protocol === 'http:' || url.protocol === 'https:') && url.port === '3000') {
-        return `${url.protocol}//${url.hostname}:8000`
+        return `${url.protocol}//${url.hostname}:8848`
       }
       return url.toString().replace(/\/$/, '')
     } catch {

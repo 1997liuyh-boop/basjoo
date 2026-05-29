@@ -96,10 +96,13 @@ class Agent(Base):
 
     # AI服务商配置
     provider_type = Column(
-        SQLEnum("openai", "openai_native", "google", "anthropic", "xai", "openrouter", "zai", "deepseek", "volcengine", "moonshot", "aliyun_bailian", "siliconflow", name="llm_provider"),
+        SQLEnum("openai", "openai_native", "google", "anthropic", "anthropic_native", "xai", "openrouter", "zai", "deepseek", "volcengine", "moonshot", "aliyun_bailian", "siliconflow", name="llm_provider"),
         nullable=True,
         default="openai"
     )
+
+    # API格式（自定义模式下可选：openai_compatible / anthropic / anthropic_native）
+    api_format = Column(String(30), nullable=True)
 
     # Azure OpenAI特定配置
     azure_endpoint = Column(String(500), nullable=True)

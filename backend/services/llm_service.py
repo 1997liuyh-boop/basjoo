@@ -745,6 +745,118 @@ class GoogleProvider(BaseLLMService):
         return sorted(models, reverse=True)
 
 
+# ========== Anthropic Native Provider ==========
+
+
+class AnthropicNativeProvider(BaseLLMService):
+    """Anthropic Messages API 原生提供商"""
+
+    DEFAULT_BASE_URL = "https://api.anthropic.com"
+    DEFAULT_VERSION = "2023-06-01"
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: Optional[str] = None,
+        model: str = "claude-3-5-sonnet-20241022",
+        timeout: int = 60,
+        anthropic_version: str = DEFAULT_VERSION,
+    ):
+        super().__init__(model=model, timeout=timeout)
+        from anthropic import AsyncAnthropic
+
+        self.api_key = api_key
+        self.anthropic_version = anthropic_version
+        resolved_base = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
+        self.client = AsyncAnthropic(
+            api_key=api_key,
+            base_url=resolved_base,
+            timeout=float(timeout),
+        )
+
+    async def chat_completion(
+        self,
+        messages: List[Dict[str, str]],
+        system_prompt: Optional[str] = None,
+        stream: bool = True,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> AsyncGenerator[str, None]:
+        try:
+            self.reset_last_usage()
+            anthropic_messages = self._convert_messages(messages)
+            request_max_tokens = 2000 if max_tokens is None else max_tokens
+
+            logger.info(
+                "anthropic-native chat request model=%s stream=%s max_tokens=%r",
+                self.model,
+                stream,
+                request_max_tokens,
+            )
+
+            create_params = {
+                "model": self.model,
+                "messages": anthropic_messages,
+                "max_tokens": request_max_tokens,
+            }
+            if system_prompt:
+                create_params["system"] = system_prompt
+            if temperature is not None:
+                create_params["temperature"] = temperature
+
+            if stream:
+                async with self.client.messages.stream(**create_params) as stream_ctx:
+                    async for event in stream_ctx:
+                        if event.type == "content_block_delta" and event.delta.type == "text_delta":
+                            yield event.delta.text
+                            await asyncio.sleep(0)
+                    final = await stream_ctx.get_final_message()
+                    if final and getattr(final, "usage", None):
+                        self.set_last_usage(final.usage)
+            else:
+                response = await self.client.messages.create(**create_params)
+                self.set_last_usage(getattr(response, "usage", None))
+                for block in response.content:
+                    if block.type == "text":
+                        yield block.text
+
+        except LLMError:
+            raise
+        except Exception as e:
+            logger.error(f"Anthropic Native API 调用失败: {str(e)}")
+            raise classify_llm_error(e) from e
+
+    async def test_connection(self) -> bool:
+        try:
+            await asyncio.wait_for(
+                self.client.messages.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": "Hello"}],
+                    max_tokens=5,
+                ),
+                timeout=15,
+            )
+            return True
+        except Exception as e:
+            classified = classify_llm_error(e)
+            logger.error(f"Anthropic Native 连接测试失败 [{classified.code}]: {str(e)}")
+            return False
+
+    @staticmethod
+    def _convert_messages(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        converted = []
+        for m in messages:
+            role = m.get("role", "user")
+            if role == "system":
+                continue
+            if role == "assistant":
+                role = "assistant"
+            else:
+                role = "user"
+            converted.append({"role": role, "content": m.get("content", "")})
+        return converted
+
+
 # ========== 工厂函数 ==========
 
 
@@ -756,6 +868,7 @@ def get_llm_service(
     api_base: Optional[str] = None,
     model: Optional[str] = None,
     provider_type: Optional[str] = None,
+    api_format: Optional[str] = None,
 ) -> BaseLLMService:
     """
     获取 LLM 服务实例（工厂函数）
@@ -769,6 +882,7 @@ def get_llm_service(
         api_base: 显式传入的 API Base
         model: 显式传入的模型名
         provider_type: 显式传入的服务商类型
+        api_format: API 格式（用于自定义 provider 时路由到实际协议）
 
     Returns:
         BaseLLMService: LLM 服务实例
@@ -778,6 +892,19 @@ def get_llm_service(
     resolved_model = model if model is not None else getattr(agent, "model", None)
     resolved_provider_type = provider_type if provider_type is not None else getattr(agent, "provider_type", "openai")
     resolved_provider_type = resolved_provider_type or "openai"
+    resolved_api_format = api_format if api_format is not None else getattr(agent, "api_format", None)
+
+    # 自定义 provider_type='openai' 时，根据 api_format 路由到实际协议
+    if resolved_provider_type == "openai" and resolved_api_format:
+        if resolved_api_format == "anthropic_native":
+            resolved_provider_type = "anthropic_native"
+            logger.info("自定义 provider 路由到 Anthropic Native (Messages API)")
+        elif resolved_api_format == "anthropic":
+            resolved_provider_type = "anthropic"
+            logger.info("自定义 provider 路由到 Anthropic (OpenAI Compatible)")
+        elif resolved_api_format == "openai_compatible":
+            # 保持 openai，使用 OpenAI 兼容协议
+            pass
 
     # 如果没有API key或显式要求使用Mock
     if use_mock or not resolved_api_key:
@@ -804,6 +931,14 @@ def get_llm_service(
         return OpenAIProvider(
             api_key=resolved_api_key,
             base_url=resolved_api_base or "https://api.anthropic.com/v1",
+            model=resolved_model or "claude-3-5-sonnet-20241022",
+        )
+
+    elif resolved_provider_type == "anthropic_native":
+        logger.info("使用 Anthropic Native Provider (Messages API)")
+        return AnthropicNativeProvider(
+            api_key=resolved_api_key,
+            base_url=resolved_api_base,
             model=resolved_model or "claude-3-5-sonnet-20241022",
         )
 

@@ -50,11 +50,16 @@ def _resolve_and_check(hostname: str) -> tuple[bool, str]:
     return True, ""
 
 
-def validate_url_safe(url: str) -> tuple[bool, str]:
+def validate_url_safe(url: str, allow_ip: bool = False) -> tuple[bool, str]:
     """Validate that a URL is safe to fetch.
 
     Returns (is_safe, reason).
     Blocks localhost, private IPs, cloud metadata, and credentials in URLs.
+
+    Args:
+        url: The URL to validate.
+        allow_ip: If True, allow direct IP literals and private/reserved IPs.
+                  Only enable in trusted environments.
     """
     if not url:
         return False, "URL is empty"
@@ -80,12 +85,42 @@ def validate_url_safe(url: str) -> tuple[bool, str]:
     if hostname_lower in ("localhost", ""):
         return False, "localhost is not allowed"
 
-    # Reject direct IP literals
-    try:
-        ipaddress.ip_address(hostname_lower)
-        return False, "Direct IP literals are not allowed"
-    except ValueError:
-        pass
+    # Reject direct IP literals unless explicitly allowed
+    if not allow_ip:
+        try:
+            ipaddress.ip_address(hostname_lower)
+            return False, "Direct IP literals are not allowed"
+        except ValueError:
+            pass
 
-    # Resolve hostname and check resolved IPs
-    return _resolve_and_check(hostname_lower)
+        # Resolve hostname and check resolved IPs
+        return _resolve_and_check(hostname_lower)
+    else:
+        # IP literals are allowed — still block loopback for safety
+        try:
+            addr = ipaddress.ip_address(hostname_lower)
+            if addr.is_loopback:
+                return False, "Loopback IP is not allowed"
+            return True, ""
+        except ValueError:
+            pass
+
+        # Hostname: resolve and only block loopback
+        try:
+            infos = socket.getaddrinfo(hostname_lower, None)
+        except OSError as e:
+            return False, f"DNS resolution failed: {e}"
+
+        seen_ips = set()
+        for _family, _, _, _, sockaddr in infos:
+            ip_str = sockaddr[0]
+            if ip_str in seen_ips:
+                continue
+            seen_ips.add(ip_str)
+            try:
+                addr = ipaddress.ip_address(ip_str)
+                if addr.is_loopback:
+                    return False, f"Resolved to loopback IP {ip_str}"
+            except ValueError:
+                pass
+        return True, ""

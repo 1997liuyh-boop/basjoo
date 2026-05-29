@@ -54,6 +54,8 @@ export default function AISettingsForm({ agentId, compact = false, refreshSignal
     restricted_reply: '',
   })
   const [personaError, setPersonaError] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
 
   useEffect(() => {
     fetchAgent()
@@ -142,6 +144,42 @@ export default function AISettingsForm({ agentId, compact = false, refreshSignal
       setError(err instanceof Error ? err.message : t('errors.saveFailed'))
     } finally {
       setSaving(false)
+    }
+  }
+
+  // 测试 AI API 连接（不保存）
+  const handleTestConnection = async () => {
+    if (!agent) return
+
+    setTesting(true)
+    setTestResult(null)
+    setApiKeyError(false)
+
+    try {
+      const overrides: Partial<Agent> = {
+        api_base: formData.api_base,
+        model: formData.model,
+        provider_type: formData.provider_type,
+        api_format: formData.api_format,
+      }
+
+      if (formData.api_key.trim()) {
+        overrides.api_key = formData.api_key
+      }
+
+      const result = await api.testAIApi(agent.id, overrides)
+      setTestResult(result)
+      if (!result.success) {
+        setApiKeyError(true)
+      }
+    } catch (err) {
+      setTestResult({
+        success: false,
+        message: err instanceof Error ? err.message : t('errors.saveFailed'),
+      })
+      setApiKeyError(true)
+    } finally {
+      setTesting(false)
     }
   }
 
@@ -521,7 +559,8 @@ export default function AISettingsForm({ agentId, compact = false, refreshSignal
             }}
           >
             <option value="openai_native">OpenAI (ChatGPT)</option>
-            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="anthropic">Anthropic (Claude / OpenAI Compatible)</option>
+            <option value="anthropic_native">Anthropic Native (Messages API)</option>
             <option value="google">Google (Gemini)</option>
             <option value="xai">xAI (Grok)</option>
             <option value="deepseek">DeepSeek</option>
@@ -569,7 +608,8 @@ export default function AISettingsForm({ agentId, compact = false, refreshSignal
             >
               <option value="openai">OpenAI</option>
               <option value="openai_compatible">OpenAI Compatible</option>
-              <option value="anthropic">Anthropic</option>
+              <option value="anthropic">Anthropic (OpenAI Compatible)</option>
+              <option value="anthropic_native">Anthropic Native (Messages API)</option>
               <option value="google">Google (Gemini)</option>
             </select>
           </div>
@@ -731,6 +771,33 @@ export default function AISettingsForm({ agentId, compact = false, refreshSignal
                 fontSize: 'var(--text-xs)',
               }}>
                 {t('errors.aiApiKeyInvalid')}
+              </div>
+            )}
+            <button
+              onClick={handleTestConnection}
+              disabled={testing || saving}
+              style={{
+                marginTop: 'var(--space-2)',
+                padding: 'var(--space-1) var(--space-3)',
+                fontSize: 'var(--text-xs)',
+                fontWeight: 500,
+                color: 'var(--color-accent-primary)',
+                background: 'transparent',
+                border: '1px solid var(--color-accent-primary)',
+                borderRadius: 'var(--radius-md)',
+                cursor: testing || saving ? 'not-allowed' : 'pointer',
+                opacity: testing || saving ? 0.5 : 1,
+              }}
+            >
+              {testing ? t('status.testing') : t('labels.testConnection')}
+            </button>
+            {testResult && (
+              <div style={{
+                marginTop: 'var(--space-2)',
+                fontSize: 'var(--text-xs)',
+                color: testResult.success ? '#10B981' : '#ef4444',
+              }}>
+                {testResult.success ? t('labels.apiConnectionSuccess') : `${t('labels.apiConnectionFailed')}: ${testResult.message}`}
               </div>
             )}
           </div>

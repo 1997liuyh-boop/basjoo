@@ -768,6 +768,7 @@ async def prepare_chat_request(
         api_base=agent.api_base,
         model=agent.model,
         provider_type=agent.provider_type,
+        api_format=getattr(agent, "api_format", None),
     )
 
     return {
@@ -2143,6 +2144,7 @@ async def test_ai_api(
             api_base=payload.api_base if payload and payload.api_base is not None else agent.api_base,
             model=payload.model if payload and payload.model is not None else agent.model,
             provider_type=payload.provider_type if payload and payload.provider_type is not None else agent.provider_type,
+            api_format=payload.api_format if payload and payload.api_format is not None else getattr(agent, "api_format", None),
         )
         messages = [{"role": "user", "content": "Hello"}]
 

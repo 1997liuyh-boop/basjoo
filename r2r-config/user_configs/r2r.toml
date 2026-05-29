@@ -1,15 +1,17 @@
 [embedding]
 provider = "litellm"
-base_model = "jina_ai/jina-embeddings-v3"
+base_model = "gpt-5.2"
 base_dimension = 1024
 batch_size = 16
 concurrent_request_limit = 256
+api_base = "https://yostoken.top/v1"
 
 [completion_embedding]
 provider = "litellm"
-base_model = "jina_ai/jina-embeddings-v3"
+base_model = "gpt-5.2"
 base_dimension = 1024
 batch_size = 16
+api_base = "https://yostoken.top/v1"
 
 [ingestion]
 provider = "r2r"

@@ -1177,6 +1177,16 @@ export default function URLManagement() {
                             {t('labels.urlManagement.lastFetch')}: {new Date(url.last_fetch_at).toLocaleString()}
                           </p>
                         )}
+                        {url.status === 'failed' && url.last_error && (
+                          <p style={{
+                            fontSize: 'var(--text-xs)',
+                            color: '#ef4444',
+                            marginTop: 'var(--space-2)',
+                            wordBreak: 'break-all',
+                          }}>
+                            {url.last_error}
+                          </p>
+                        )}
                       </div>
                       <button
                         onClick={() => handleDelete(url.id)}

@@ -4,6 +4,7 @@ import hashlib
 from typing import Dict, Any, List, Tuple
 import logging
 
+from config import settings
 from services.url_safety import validate_url_safe
 from services.scrapling_client import get_scrapling_client
 from services.scraping_provider import fetch_with_provider, discover_with_provider
@@ -40,7 +41,7 @@ class URLScraper:
             包含title, content, content_hash, metadata的字典
         """
         # SSRF 安全检查
-        safe, reason = validate_url_safe(url)
+        safe, reason = validate_url_safe(url, allow_ip=settings.allow_direct_ip_fetch)
         if not safe:
             logger.warning(f"Blocked unsafe fetch of {url}: {reason}")
             return {
@@ -105,7 +106,7 @@ class URLScraper:
             发现的子页面URL和深度列表
         """
         # SSRF 安全检查
-        safe, reason = validate_url_safe(url)
+        safe, reason = validate_url_safe(url, allow_ip=settings.allow_direct_ip_fetch)
         if not safe:
             logger.warning(f"Blocked unsafe crawl seed URL {url}: {reason}")
             return []

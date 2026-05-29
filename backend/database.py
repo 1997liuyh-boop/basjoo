@@ -148,9 +148,9 @@ async def init_db():
                 session.add(default_agent)
             await session.commit()
 
-            print(f"✓ 创建默认工作空间(ID={default_workspace.id})")
+            print(f"[OK] 创建默认工作空间(ID={default_workspace.id})")
             if default_agent:
-                print(f"✓ 创建默认Agent(ID={default_agent.id})")
+                print(f"[OK] 创建默认Agent(ID={default_agent.id})")
         else:
             agent_result = await session.execute(
                 select(Agent.id).where(Agent.workspace_id == existing_workspace.id).limit(1)
@@ -158,15 +158,15 @@ async def init_db():
             existing_agent_id = agent_result.scalar_one_or_none()
 
             if existing_agent_id:
-                print(f"✓ 默认工作空间已存在(ID={existing_workspace.id})")
-                print(f"✓ 默认Agent已存在(ID={existing_agent_id})")
+                print(f"[OK] 默认工作空间已存在(ID={existing_workspace.id})")
+                print(f"[OK] 默认Agent已存在(ID={existing_agent_id})")
             elif settings.create_default_agent_on_bootstrap:
                 default_agent = _build_default_agent(existing_workspace.id)
                 session.add(default_agent)
                 await session.commit()
 
-                print(f"✓ 默认工作空间已存在(ID={existing_workspace.id})")
-                print(f"✓ 已为默认工作空间创建Agent(ID={default_agent.id})")
+                print(f"[OK] 默认工作空间已存在(ID={existing_workspace.id})")
+                print(f"[OK] 已为默认工作空间创建Agent(ID={default_agent.id})")
             else:
-                print(f"✓ 默认工作空间已存在(ID={existing_workspace.id})")
-                print("✓ 未自动创建Agent，等待管理员在后台创建")
+                print(f"[OK] 默认工作空间已存在(ID={existing_workspace.id})")
+                print("[OK] 未自动创建Agent，等待管理员在后台创建")

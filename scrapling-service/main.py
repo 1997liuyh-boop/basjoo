@@ -6,6 +6,7 @@ Uses curl_cffi for TLS-impersonated HTTP and readability-lxml for content extrac
 import hashlib
 import ipaddress
 import logging
+import os
 import re
 import socket
 from datetime import datetime, timezone
@@ -23,6 +24,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Scrapling Service", version="1.0.0")
+
+# 设为 "1" / "true" / "yes" 允许抓取内网 IP 和直连 IP 地址（仅限受信环境）
+ALLOW_DIRECT_IP_FETCH = os.environ.get("ALLOW_DIRECT_IP_FETCH", "").lower() in ("1", "true", "yes")
 
 # TLS-impersonated browser-like headers
 DEFAULT_HEADERS = {
@@ -42,7 +46,7 @@ def _is_unsafe_ip(host: str) -> bool:
     return addr.is_loopback or addr.is_private or addr.is_link_local or addr.is_multicast or addr.is_unspecified
 
 
-def _validate_fetch_url_safe(url: str):
+def _validate_fetch_url_safe(url: str, allow_ip: bool = False):
     parsed = urlsplit(url)
     if parsed.scheme.lower() not in {"http", "https"}:
         raise ValueError("Unsafe redirect target scheme")
@@ -51,15 +55,32 @@ def _validate_fetch_url_safe(url: str):
     hostname = parsed.hostname
     if not hostname or hostname.lower() == "localhost":
         raise ValueError("Unsafe redirect target host")
-    try:
-        ipaddress.ip_address(hostname)
-        raise ValueError("Unsafe redirect target IP literal")
-    except ValueError as e:
-        if "Unsafe" in str(e):
-            raise
-    for info in socket.getaddrinfo(hostname, None):
-        if _is_unsafe_ip(info[4][0]):
-            raise ValueError("Unsafe redirect target resolved IP")
+    if not allow_ip:
+        try:
+            ipaddress.ip_address(hostname)
+            raise ValueError("Unsafe redirect target IP literal")
+        except ValueError as e:
+            if "Unsafe" in str(e):
+                raise
+        for info in socket.getaddrinfo(hostname, None):
+            if _is_unsafe_ip(info[4][0]):
+                raise ValueError("Unsafe redirect target resolved IP")
+    else:
+        # IP literals allowed — only block loopback
+        try:
+            addr = ipaddress.ip_address(hostname)
+            if addr.is_loopback:
+                raise ValueError("Unsafe redirect target loopback IP")
+            return
+        except ValueError:
+            pass
+        for info in socket.getaddrinfo(hostname, None):
+            try:
+                addr = ipaddress.ip_address(info[4][0])
+                if addr.is_loopback:
+                    raise ValueError("Unsafe redirect target resolved loopback IP")
+            except ValueError:
+                pass
 
 
 def _curl_get(url: str, timeout: int):
@@ -76,10 +97,10 @@ def _httpx_get(url: str, timeout: int):
     return httpx.get(url, headers=DEFAULT_HEADERS, timeout=timeout, follow_redirects=False)
 
 
-def _fetch_following_safe_redirects(url: str, timeout: int, getter):
+def _fetch_following_safe_redirects(url: str, timeout: int, getter, allow_ip: bool = False):
     current_url = url
     for _ in range(6):
-        _validate_fetch_url_safe(current_url)
+        _validate_fetch_url_safe(current_url, allow_ip=allow_ip)
         resp = getter(current_url, timeout)
         status_code = resp.status_code
         if status_code not in {301, 302, 303, 307, 308}:
@@ -91,12 +112,12 @@ def _fetch_following_safe_redirects(url: str, timeout: int, getter):
     raise ValueError("Too many redirects")
 
 
-def _fetch_with_fallback(url: str, timeout: int = 30):
+def _fetch_with_fallback(url: str, timeout: int = 30, allow_ip: bool = False):
     try:
-        return _fetch_following_safe_redirects(url, timeout, _curl_get)
+        return _fetch_following_safe_redirects(url, timeout, _curl_get, allow_ip=allow_ip)
     except Exception as e:
         logger.warning(f"curl_cffi failed for {url}: {e}, falling back to httpx")
-        return _fetch_following_safe_redirects(url, timeout, _httpx_get)
+        return _fetch_following_safe_redirects(url, timeout, _httpx_get, allow_ip=allow_ip)
 
 
 class FetchRequest(BaseModel):
@@ -175,12 +196,46 @@ def _extract_content(html: str, url: str) -> tuple:
         return title, content
 
 
+async def _browser_fetch_and_extract(url: str, timeout: int = 30) -> tuple:
+    """Fallback: use Playwright headless browser for JS-rendered pages (SPA, docs, sheets)."""
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        logger.warning("playwright not installed, skipping browser fallback")
+        return "", ""
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            )
+            try:
+                context = await browser.new_context(
+                    user_agent=DEFAULT_HEADERS["User-Agent"],
+                    viewport={"width": 1280, "height": 720},
+                )
+                page = await context.new_page()
+                await page.goto(url, wait_until="networkidle", timeout=timeout * 1000)
+                # Wait a bit more for dynamically loaded content
+                await page.wait_for_timeout(2000)
+                html = await page.content()
+            finally:
+                await browser.close()
+
+        title, content = _extract_content(html, url)
+        return title, content
+    except Exception as e:
+        logger.warning(f"Browser fetch failed for {url}: {e}")
+        return "", ""
+
+
 @app.post("/fetch", response_model=FetchResponse)
 async def fetch_url(request: FetchRequest):
     try:
         logger.info(f"Fetching URL: {request.url}")
 
-        html, status_code, final_url, content_type = _fetch_with_fallback(request.url, request.timeout)
+        html, status_code, final_url, content_type = _fetch_with_fallback(request.url, request.timeout, allow_ip=ALLOW_DIRECT_IP_FETCH)
 
         if status_code >= 400:
             return FetchResponse(
@@ -205,14 +260,21 @@ async def fetch_url(request: FetchRequest):
         title, content_text = _extract_content(html, request.url)
 
         if not content_text or len(content_text.strip()) < 10:
-            return FetchResponse(
-                title=title or "",
-                content="",
-                content_hash="",
-                metadata={"url": request.url, "fetcher": "scrapling"},
-                success=False,
-                error="Extracted content is too short or empty"
-            )
+            logger.info(f"Static extraction produced short content ({len(content_text.strip())} chars), trying browser fallback for {request.url}")
+            browser_title, browser_content = await _browser_fetch_and_extract(request.url, request.timeout)
+            if browser_content and len(browser_content.strip()) >= 10:
+                title = browser_title or title
+                content_text = browser_content
+                logger.info(f"Browser fallback succeeded for {request.url}: {len(content_text)} chars")
+            else:
+                return FetchResponse(
+                    title=title or "",
+                    content="",
+                    content_hash="",
+                    metadata={"url": request.url, "fetcher": "scrapling"},
+                    success=False,
+                    error="Extracted content is too short or empty"
+                )
 
         content_hash = hashlib.sha256(content_text.encode("utf-8")).hexdigest()
 
@@ -259,7 +321,7 @@ async def discover_links(request: DiscoverRequest):
             base_path = base_path[:-1]
         base_path_with_slash = "/" if base_path == "/" else f"{base_path}/"
 
-        html, status_code, _, _ = _fetch_with_fallback(request.url, 30)
+        html, status_code, _, _ = _fetch_with_fallback(request.url, 30, allow_ip=ALLOW_DIRECT_IP_FETCH)
 
         if status_code >= 400:
             raise HTTPException(status_code=502, detail=f"HTTP {status_code}")
